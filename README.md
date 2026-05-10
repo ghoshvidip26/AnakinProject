@@ -34,7 +34,10 @@ graph TD
     
     Luma & Meetup & Eventbrite --> Anakin
     Anakin --> Parser
-    Parser -->|JSON Output| User
+    Parser -->|JSON Output| Brain[Brain Builder<br/>Vector Embeddings]
+    Brain -->|knowledge_base.json| User
+    User -->|Query| RAG[RAG Engine<br/>Gemini 1.5 Flash]
+    RAG -->|Answer| User
 ```
 
 ## 🚀 Setup & Installation
@@ -48,6 +51,7 @@ graph TD
    Create a `.env` file in the root directory:
    ```env
    ANAKIN_API_KEY=your_actual_api_key_here
+   GEMINI_API_KEY=your_google_ai_studio_key
    PORT=3000
    ```
 
@@ -63,6 +67,7 @@ npm run scrape
 - This triggers `scrape-all.js` which sequentially runs Luma, Meetup, and Eventbrite scrapers.
 - **Temporary Output:** It writes `luma_results.json`, `meetup_results.json`, and `eventbrite_results.json` locally.
 - **Auto-Cleanup:** The terminal will remain open in an interactive wait state. When you are done, press `Ctrl+C` or type `exit` and the system will automatically securely delete the temporary JSON files.
+- **AI Brain Building:** After scraping, it automatically runs `brain-builder.js` to index the data for the RAG model.
 
 ### 2. Express API Mode
 
@@ -78,6 +83,14 @@ The server supports both `GET` and `POST` methods, allowing you to pass paramete
 - `GET / POST /api/scrape/meetup` (Accepts `location` and `dateRange` params)
 - `GET / POST /api/scrape/eventbrite`
 - `GET / POST /api/scrape/all`
+- `GET / POST /api/chat` (AI-powered natural language query)
+
+**Example RAG Query:**
+```bash
+curl -X POST http://localhost:3000/api/chat \
+-H "Content-Type: application/json" \
+-d '{"query": "Are there any AI networking events in Bangalore this weekend?"}'
+```
 
 *Example POST request:*
 ```bash

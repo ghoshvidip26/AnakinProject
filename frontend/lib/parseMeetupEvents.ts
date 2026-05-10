@@ -16,22 +16,25 @@ function enrichEvent(eventObj: any, exactVenue: any = null) {
     const lowerTitle = eventObj.title.toLowerCase();
     const lowerGroup = (eventObj.group || "").toLowerCase();
     
-    // Heuristics for categories
+    // Industry Grade: Advanced Sector Heuristics
     const categories = [];
-    if (lowerTitle.includes("ai") || lowerTitle.includes("intelligence") || lowerGroup.includes("ai")) categories.push("AI");
-    if (lowerTitle.includes("build") || lowerTitle.includes("dev") || lowerTitle.includes("code") || lowerGroup.includes("dev")) categories.push("Technical");
-    if (lowerTitle.includes("meetup") || lowerTitle.includes("party") || lowerTitle.includes("social") || lowerGroup.includes("meetup")) categories.push("Networking");
-    if (lowerTitle.includes("privacy") || lowerTitle.includes("security")) categories.push("Privacy");
-    if (lowerTitle.includes("bitcoin") || lowerTitle.includes("crypto") || lowerTitle.includes("btc")) categories.push("Crypto");
-    if (categories.length === 0) categories.push("General");
+    
+    if (lowerTitle.includes("ai") || lowerTitle.includes("intelligence") || lowerTitle.includes("claude") || lowerTitle.includes("llm")) categories.push("AI");
+    if (lowerTitle.includes("fintech") || lowerTitle.includes("finance") || lowerTitle.includes("trading")) categories.push("Fintech");
+    if (lowerTitle.includes("saas") || lowerTitle.includes("enterprise") || lowerTitle.includes("b2b")) categories.push("SaaS");
+    if (lowerTitle.includes("crypto") || lowerTitle.includes("web3") || lowerTitle.includes("blockchain") || lowerTitle.includes("bitcoin")) categories.push("Web3");
+    if (lowerTitle.includes("developer") || lowerTitle.includes("code") || lowerTitle.includes("technical") || lowerTitle.includes("workshop")) categories.push("Technical");
+    if (lowerTitle.includes("social") || lowerTitle.includes("mixer") || lowerTitle.includes("party") || lowerTitle.includes("networking")) categories.push("Networking");
+    
+    if (categories.length === 0) categories.push("General Tech");
 
-    // Score estimation
+    // Industry Grade: Score estimation
     let networkingScore = 5;
     let technicalScore = 5;
-    if (lowerTitle.includes("meetup") || lowerTitle.includes("party") || lowerGroup.includes("meetup")) networkingScore += 3;
-    if (lowerTitle.includes("launch")) networkingScore += 2;
-    if (lowerTitle.includes("workshop") || lowerTitle.includes("build") || lowerTitle.includes("code")) technicalScore += 3;
-    if (lowerTitle.includes("ai") || lowerTitle.includes("claude") || lowerTitle.includes("data")) technicalScore += 2;
+    if (categories.includes("Networking")) networkingScore += 4;
+    if (categories.includes("Technical")) technicalScore += 4;
+    if (categories.includes("AI")) technicalScore += 2;
+    if (lowerTitle.includes("launch") || lowerTitle.includes("demo")) networkingScore += 2;
 
     // Coordinate mapping
     let latitude = 12.9716; 
@@ -56,7 +59,8 @@ function enrichEvent(eventObj: any, exactVenue: any = null) {
         latitude: latitude,
         longitude: longitude,
         networkingScore: Math.min(10, networkingScore),
-        technicalScore: Math.min(10, technicalScore)
+        technicalScore: Math.min(10, technicalScore),
+        source: "Meetup"
     };
 }
 

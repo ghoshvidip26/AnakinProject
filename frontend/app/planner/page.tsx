@@ -33,23 +33,44 @@ export default function PlannerPage() {
 
   const generatePlan = async () => {
     setIsGenerating(true)
-    const input: PlannerInput = {
-      interests,
-      location,
-      freeTime,
-      origin,
-    }
+    const query = `Plan a developer day in ${location} focused on ${interests.join(", ")} for the ${freeTime.toLowerCase()}.`
 
     try {
-      await new Promise((resolve) => setTimeout(resolve, 2800))
-      const plan = planDeveloperDay(input, mockEvents)
-      setResult(plan)
-      await fetch("/api/recommend", {
+      const response = await fetch("http://localhost:3000/api/chat", {
         method: "POST",
-        body: JSON.stringify({ interests, location, freeTime }),
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ query }),
       })
-    } catch {
-      // ignore API errors for UI demo
+      const data = await response.json()
+
+      if (data.status === "success") {
+        const rag = data.answer
+        // Map RAG response to Planner UI format
+        const mappedResult: PlannerOutput = {
+          headline: `AI-crafted plan for ${location}`,
+          explanation: rag.summary,
+          schedule: rag.events.map((e: any) => ({
+            ...e,
+            id: e.url,
+            time: e.date.includes(":") ? e.date.split("·")[1]?.trim() || "09:00" : "09:00", // Basic extraction
+            type: "Meetup",
+            organizer: "Anakin AI",
+            networkingScore: 9,
+            technicalScore: 8,
+            distance: 2.5,
+            latitude: 12.97,
+            longitude: 77.59,
+            matches: true
+          })),
+          bestNetworking: null,
+          bestTechnical: null,
+          lowTravel: null,
+          summaryBullets: [rag.intelligence_brief]
+        }
+        setResult(mappedResult)
+      }
+    } catch (error) {
+      console.error("Failed to fetch plan:", error)
     } finally {
       setIsGenerating(false)
     }

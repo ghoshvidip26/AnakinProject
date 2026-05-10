@@ -92,12 +92,22 @@ const askQuestion = (query) => new Promise(resolve => rl.question(query, resolve
 
 (async () => {
     try {
-        console.log('\n=== Meetup Scraper Interactive Setup ===');
-        console.log('Leave any option blank and press Enter to use the default value.\n');
+        // Industry Grade: Support for non-interactive execution via env vars or defaults
+        let location = process.env.SCRAPE_LOCATION || 'in--Bangalore';
+        let eventType = process.env.SCRAPE_EVENT_TYPE || '';
+        let dateRange = process.env.SCRAPE_DATE_RANGE || 'any-day';
 
-        const location = await askQuestion('1. Enter Location (e.g. in--Bangalore, us--ny--new-york) [default: in--Bangalore]: ') || 'in--Bangalore';
-        const eventType = await askQuestion('2. Enter Event Type (inPerson, online) [default: both]: ');
-        const dateRange = await askQuestion('3. Enter Date Range (today, tomorrow, this-week, this-weekend, next-week) [default: any-day]: ') || 'any-day';
+        // Only ask questions if explicitly requested or in a terminal that supports it
+        if (process.stdin.isTTY && !process.env.NON_INTERACTIVE) {
+            console.log('\n=== Meetup Scraper Interactive Setup ===');
+            console.log('Leave any option blank and press Enter to use the default value.\n');
+            location = await askQuestion(`1. Enter Location [default: ${location}]: `) || location;
+            eventType = await askQuestion(`2. Enter Event Type (inPerson, online) [default: both]: `) || eventType;
+            dateRange = await askQuestion(`3. Enter Date Range [default: ${dateRange}]: `) || dateRange;
+        } else {
+            console.log(`\n=== Running in Automation Mode ===`);
+            console.log(`Location: ${location}, Type: ${eventType || 'both'}, Range: ${dateRange}`);
+        }
 
         rl.close();
 

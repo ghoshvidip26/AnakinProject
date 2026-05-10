@@ -18,32 +18,15 @@ function classifyCategories(title = "") {
   const lower = title.toLowerCase();
   const categories = [];
 
-  if (
-    lower.includes("ai") ||
-    lower.includes("ml") ||
-    lower.includes("llm") ||
-    lower.includes("genai")
-  ) {
-    categories.push("AI");
-  }
-
-  if (
-    lower.includes("startup") ||
-    lower.includes("founder")
-  ) {
-    categories.push("Startup");
-  }
-
-  if (
-    lower.includes("web3") ||
-    lower.includes("blockchain")
-  ) {
-    categories.push("Web3");
-  }
-
-  if (categories.length === 0) {
-    categories.push("General");
-  }
+  // Industry Grade: Advanced Sector Heuristics
+  if (lower.includes("ai") || lower.includes("intelligence") || lower.includes("claude") || lower.includes("llm") || lower.includes("ml")) categories.push("AI");
+  if (lower.includes("fintech") || lower.includes("finance") || lower.includes("trading") || lower.includes("invest")) categories.push("Fintech");
+  if (lower.includes("saas") || lower.includes("enterprise") || lower.includes("b2b")) categories.push("SaaS");
+  if (lower.includes("crypto") || lower.includes("web3") || lower.includes("blockchain") || lower.includes("bitcoin")) categories.push("Web3");
+  if (lower.includes("developer") || lower.includes("code") || lower.includes("technical") || lower.includes("workshop") || lower.includes("devops")) categories.push("Technical");
+  if (lower.includes("social") || lower.includes("mixer") || lower.includes("party") || lower.includes("networking")) categories.push("Networking");
+  
+  if (categories.length === 0) categories.push("General Tech");
 
   return categories;
 }
@@ -110,19 +93,30 @@ export function parseEventbriteEvents(html: string) {
         }
 
         const eventId = href.split('/e/')[1]?.split('/')[0]?.split('?')[0] || (events.length + 1).toString();
+        
+        // Industry Grade: Score estimation
+        let networkingScore = 5;
+        let technicalScore = 5;
+        if (categories.includes("Networking")) networkingScore += 4;
+        if (categories.includes("Technical")) technicalScore += 4;
+        if (categories.includes("AI")) technicalScore += 2;
+        const lower = title.toLowerCase();
+        if (lower.includes("launch") || lower.includes("demo")) networkingScore += 2;
+
         events.push({
-          id: eventId,
+          id: `eventbrite-${eventId}`,
           title,
           category: categories,
           latitude,
           longitude,
           venue: "Bangalore",
           date: "2026-05-11",
-          networkingScore: 7,
-          technicalScore: 7,
+          networkingScore: Math.min(10, networkingScore),
+          technicalScore: Math.min(10, technicalScore),
           url: href.startsWith("http")
             ? href
             : `https://eventbrite.com${href}`,
+          source: "Eventbrite"
         });
       }
     });

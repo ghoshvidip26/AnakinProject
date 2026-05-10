@@ -39,6 +39,13 @@ async function handler(request: Request) {
         
         allEvents = filterEvents(allEvents, filterParams);
 
+        // Industry Grade Alignment: Notify backend to index new data
+        try {
+            await fetch("http://localhost:3000/api/index", { method: "POST" }).catch(() => {});
+        } catch (e) {
+            console.error("Backend indexing skip:", e);
+        }
+
         return NextResponse.json({
             status: "success",
             total: allEvents.length,

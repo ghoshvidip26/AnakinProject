@@ -5,12 +5,24 @@ const { parseLumaEvents } = require("./lib/parseLumaEvents");
 const { parseMeetupEvents } = require("./lib/parseMeetupEvents");
 const { parseEventbriteEvents } = require("./lib/parseEventbriteEvents");
 const { normalizeEvent } = require("./lib/normalizer");
+const ragEngine = require("./lib/rag-engine");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 const API_KEY = process.env.ANAKIN_API_KEY;
 
 app.use(express.json());
+
+// Industry Grade: Simple CORS middleware for frontend communication
+app.use((req, res, next) => {
+    res.header("Access-Control-Allow-Origin", "*");
+    res.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
+    res.header("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept, Authorization");
+    if (req.method === "OPTIONS") {
+        return res.sendStatus(200);
+    }
+    next();
+});
 
 /**
  * Filters events based on query parameters
@@ -93,7 +105,7 @@ const lumaHandler = async (req, res) => {
             const location = mapped ? mapped.luma : (req.body?.location || req.query?.location || "bengaluru");
             url = `https://lu.ma/${location.toLowerCase()}`;
         }
-        
+
         const job = await runAnakinScrape(url);
         let events = parseLumaEvents(job.html || job.content).map(e => normalizeEvent(e, "Luma"));
         events = filterEvents(events, req.body || req.query);
@@ -111,7 +123,7 @@ const meetupHandler = async (req, res) => {
         const location = mapped ? mapped.meetup : (req.body?.location || req.query?.location || "in--Bangalore");
         const dateRange = req.body?.dateRange || req.query?.dateRange || "any-day";
         const url = `https://www.meetup.com/find/?location=${location}&source=EVENTS&dateRange=${dateRange}`;
-        
+
         const job = await runAnakinScrape(url);
         let events = parseMeetupEvents(job.html || job.content).map(e => normalizeEvent(e, "Meetup"));
         events = filterEvents(events, req.body || req.query);
@@ -148,12 +160,12 @@ const scrapeAllHandler = async (req, res) => {
     try {
         const city = req.body?.city || req.query?.city;
         const mapped = mapLocation(city);
-        
+
         const lumaUrl = req.body?.lumaUrl || req.query?.lumaUrl || `https://lu.ma/${mapped ? mapped.luma : 'bengaluru'}`;
         const meetupLoc = mapped ? mapped.meetup : (req.body?.meetupLocation || req.query?.meetupLocation || "in--Bangalore");
         const eventbriteLoc = mapped ? mapped.eventbrite : "india--bangalore";
         const category = req.body?.category || req.query?.category || "science-and-tech--events";
-        
+
         const eventbriteUrl = req.body?.eventbriteUrl || req.query?.eventbriteUrl || `https://www.eventbrite.com/d/${eventbriteLoc}/${category}/`;
 
         const results = await Promise.allSettled([
@@ -179,11 +191,58 @@ const scrapeAllHandler = async (req, res) => {
     }
 };
 
+// 5. Health Status
+const statusHandler = async (req, res) => {
+    const fs = require('fs');
+    const path = require('path');
+    const kbPath = path.join(__dirname, 'data', 'knowledge_base.json');
+    const kbExists = fs.existsSync(kbPath);
+    
+    res.json({
+        status: "online",
+        engine: "Anakin Intelligence RAG",
+        knowledgeBase: {
+            active: kbExists,
+            records: kbExists ? JSON.parse(fs.readFileSync(kbPath, 'utf8')).length : 0
+        },
+        uptime: process.uptime()
+    });
+};
+
+// 6. RAG Chat
+const chatHandler = async (req, res) => {
+    try {
+        const query = req.body?.query || req.query?.query;
+        if (!query) {
+            return res.status(400).json({ status: "error", message: "Query is required" });
+        }
+
+        const answer = await ragEngine.query(query);
+        res.json({ status: "success", answer });
+    } catch (error) {
+        res.status(500).json({ status: "error", message: error.message });
+    }
+};
+
+// 7. Indexing Trigger (Industry Grade Alignment)
+const indexHandler = async (req, res) => {
+    try {
+        const { buildBrain } = require('./lib/brain-builder');
+        await buildBrain();
+        res.json({ status: "success", message: "Knowledge base synchronized and indexed." });
+    } catch (err) {
+        res.status(500).json({ status: "error", message: "Failed to update brain: " + err.message });
+    }
+};
+
 // Register GET and POST routes
+app.route('/api/chat').get(chatHandler).post(chatHandler);
+app.route('/api/status').get(statusHandler);
 app.route('/api/scrape/luma').get(lumaHandler).post(lumaHandler);
 app.route('/api/scrape/meetup').get(meetupHandler).post(meetupHandler);
 app.route('/api/scrape/eventbrite').get(eventbriteHandler).post(eventbriteHandler);
 app.route('/api/scrape/all').get(scrapeAllHandler).post(scrapeAllHandler);
+app.route('/api/index').post(indexHandler);
 
 app.listen(PORT, () => {
     console.log(`\n🚀 Anakin API Server running at http://localhost:${PORT}`);
@@ -192,4 +251,6 @@ app.listen(PORT, () => {
     console.log(`- /api/scrape/meetup`);
     console.log(`- /api/scrape/eventbrite`);
     console.log(`- /api/scrape/all`);
+    console.log(`- /api/chat`);
+    console.log(`- /api/status`);
 });
