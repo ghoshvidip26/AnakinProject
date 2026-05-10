@@ -16,6 +16,27 @@ export function filterEvents(events: any[], { location, category }: { location?:
     return filtered;
 }
 
+/**
+ * Dynamic translation for common Indian cities to their respective platform URL segments
+ */
+export function mapLocation(city?: string | null) {
+    if (!city) return null;
+    const c = city.toLowerCase().trim();
+    if (c === "bengaluru" || c === "bangalore") return { luma: "bengaluru", meetup: "in--Bangalore", eventbrite: "india--bangalore" };
+    if (c === "mumbai") return { luma: "mumbai", meetup: "in--mumbai", eventbrite: "india--mumbai" };
+    if (c === "delhi" || c === "new delhi") return { luma: "new-delhi", meetup: "in--new-delhi", eventbrite: "india--new-delhi" };
+    if (c === "hyderabad") return { luma: "hyderabad", meetup: "in--hyderabad", eventbrite: "india--hyderabad" };
+    if (c === "pune") return { luma: "pune", meetup: "in--pune", eventbrite: "india--pune" };
+    if (c === "chennai") return { luma: "chennai", meetup: "in--chennai", eventbrite: "india--chennai" };
+
+    // Generic fallback for other cities
+    return { 
+        luma: c.replace(/\s+/g, '-'), 
+        meetup: `in--${c.replace(/\s+/g, '-')}`, 
+        eventbrite: `india--${c.replace(/\s+/g, '-')}` 
+    };
+}
+
 const API_KEY = process.env.ANAKIN_API_KEY;
 
 export async function runAnakinScrape(url: string, waitMs = 25000) {
