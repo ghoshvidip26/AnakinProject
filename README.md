@@ -1,52 +1,94 @@
-# Meetup Scraper using Anakin.io
+# Anakin Event Scraper
 
-This project provides a script to scrape upcoming events from Meetup (Bangalore) using the **Anakin.io** AI-powered web scraping API.
+A robust, deterministic web scraping and aggregation engine for tech events in Bengaluru. Powered by [Anakin.io's API](https://anakin.io/) and built with Node.js, this system uses advanced Apollo State extraction and Cheerio DOM traversal to reliably scrape networking and technical events from Luma, Meetup, and Eventbrite.
 
-## Prerequisites
+---
 
-1. **Node.js** installed on your system.
-2. An **Anakin.io API Key**. You can get this from your [Anakin.io Dashboard](https://anakin.io/).
+## 🏗 System Architecture
 
-## Setup
+```mermaid
+graph TD
+    User([User / Scheduler])
+    
+    subgraph Interfaces
+        CLI[CLI Orchestrator<br/>npm run scrape]
+        API[Express API<br/>npm start]
+    end
 
-1. **Install Dependencies**:
+    subgraph Core Scrapers
+        Luma(scrape-luma.js)
+        Meetup(scrape_meetup.js)
+        Eventbrite(scrape-eventbrite.js)
+    end
+
+    subgraph Data Processing
+        Parser[Heuristic Parsers<br/>Categorization & Scoring]
+        Anakin[Anakin.io URL Scraper API]
+    end
+    
+    User -->|Runs Script| CLI
+    User -->|HTTP GET/POST| API
+    
+    CLI --> Luma & Meetup & Eventbrite
+    API --> Luma & Meetup & Eventbrite
+    
+    Luma & Meetup & Eventbrite --> Anakin
+    Anakin --> Parser
+    Parser -->|JSON Output| User
+```
+
+## 🚀 Setup & Installation
+
+1. **Install Dependencies**
    ```bash
    npm install
    ```
 
-2. **Configure API Key**:
-   Open the `.env` file and replace `your_api_key_here` with your actual Anakin.io API key:
+2. **Environment Variables**
+   Create a `.env` file in the root directory:
    ```env
    ANAKIN_API_KEY=your_actual_api_key_here
+   PORT=3000
    ```
 
-## Usage
+## 💻 Usage
 
-Run the scraper with the following command:
+### 1. Interactive CLI (Temporary Session Mode)
 
+Run the full suite using the newly added NPM script:
 ```bash
-node scrape_meetup.js
+npm run scrape
 ```
 
-The script will:
-- Submit a request to Anakin.io to scrape `https://www.meetup.com/find/in--bangalore/`.
-- Use a headless browser to render JavaScript content.
-- Use AI to extract structured data (titles, dates, locations, group names, etc.) into a clean JSON format.
-- Poll the Anakin.io API until the results are ready.
+- This triggers `scrape-all.js` which sequentially runs Luma, Meetup, and Eventbrite scrapers.
+- **Temporary Output:** It writes `luma_results.json`, `meetup_results.json`, and `eventbrite_results.json` locally.
+- **Auto-Cleanup:** The terminal will remain open in an interactive wait state. When you are done, press `Ctrl+C` or type `exit` and the system will automatically securely delete the temporary JSON files.
 
-## Script Details
+### 2. Express API Mode
 
-The script `scrape_meetup.js` uses the following schema for extraction:
-
-```json
-{
-  "title": "string",
-  "date_time": "string",
-  "location_name": "string",
-  "address": "string",
-  "group_name": "string",
-  "event_url": "string",
-  "attendee_count": "integer"
-}
+Start the API server:
+```bash
+npm start
 ```
-# AnakinProject
+
+The server supports both `GET` and `POST` methods, allowing you to pass parameters via query strings or JSON body payloads.
+
+**Endpoints:**
+- `GET / POST /api/scrape/luma`
+- `GET / POST /api/scrape/meetup` (Accepts `location` and `dateRange` params)
+- `GET / POST /api/scrape/eventbrite`
+- `GET / POST /api/scrape/all`
+
+*Example POST request:*
+```bash
+curl -X POST http://localhost:3000/api/scrape/meetup \
+-H "Content-Type: application/json" \
+-d '{"location": "in--Bangalore", "dateRange": "this-week"}'
+```
+
+## 🧠 Data Processing Heuristics
+
+All incoming scraped data passes through the `src/parsers` engine, which applies:
+- **Geo-Mapping:** Infers precise Latitude/Longitude coordinates based on Bangalore neighborhood names.
+- **Semantic Tagging:** Auto-categorizes events (e.g., `AI`, `Technical`, `Networking`) based on title keywords.
+- **Score Generation:** Assigns a `networkingScore` and `technicalScore` out of 10 to help prioritize highly valuable events.

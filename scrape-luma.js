@@ -92,7 +92,17 @@ async function scrape(url) {
       const events = parseLumaEvents(job.html);
       
       console.log(`Found ${events.length} events:\n`);
-      console.log(JSON.stringify(events, null, 2));
+      const output = {
+        status: "success",
+        source: "Luma",
+        total_events: events.length,
+        events: events
+      };
+      console.log(JSON.stringify(output, null, 2));
+
+      const fs = require('fs');
+      fs.writeFileSync('luma_results.json', JSON.stringify(output, null, 2));
+      console.log("\nResults saved to luma_results.json");
     } else {
       console.log("No HTML found in the response. Full job response:");
       console.log(JSON.stringify(job, null, 2));

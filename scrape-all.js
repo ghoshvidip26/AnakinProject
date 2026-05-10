@@ -32,8 +32,52 @@ async function main() {
         console.log("\n----------------------------------------\n");
 
         console.log("SUCCESS: All scraping jobs completed.");
-        console.log("Check the individual result files for structured JSON output.");
-        console.log("========================================");
+        console.log("Check the individual result files for structured JSON output:");
+        console.log("- luma_results.json");
+        console.log("- meetup_results.json");
+        console.log("- eventbrite_results.json");
+        console.log("\n========================================\n");
+
+        // Set up cleanup logic
+        const fs = require('fs');
+        const path = require('path');
+        const filesToClean = [
+            'luma_results.json',
+            'meetup_results.json',
+            'eventbrite_results.json'
+        ];
+
+        const cleanup = () => {
+            console.log("\n[Cleanup] Removing temporary session JSON files...");
+            for (const file of filesToClean) {
+                const filePath = path.join(__dirname, file);
+                if (fs.existsSync(filePath)) {
+                    fs.unlinkSync(filePath);
+                    console.log(`Deleted: ${file}`);
+                }
+            }
+            console.log("Session closed safely.");
+            process.exit(0);
+        };
+
+        // Handle process exits safely
+        process.on('SIGINT', cleanup);
+        process.on('SIGTERM', cleanup);
+
+        // Keep terminal active for the session
+        const readline = require('readline');
+        const rl = readline.createInterface({
+            input: process.stdin,
+            output: process.stdout
+        });
+
+        rl.question("Session Active. Press Ctrl+C or type 'exit' to close the session and delete temporary files: ", (answer) => {
+            if (answer.trim().toLowerCase() === 'exit') {
+                cleanup();
+            } else {
+                console.log("Invalid input, session still active. Press Ctrl+C to close.");
+            }
+        });
 
     } catch (error) {
         console.error("\n[!] ERROR: One of the scrapers encountered an issue.");

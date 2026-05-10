@@ -120,14 +120,20 @@ const askQuestion = (query) => new Promise(resolve => rl.question(query, resolve
         if (html) {
             console.log("Parsing HTML with Meetup Parser...");
 
-            // Dump HTML for debugging
-            const fs = require('fs');
-            fs.writeFileSync("debug_meetup.html", html);
-
             const events = parseMeetupEvents(html);
 
             console.log(`Found ${events.length} events:\n`);
-            console.log(JSON.stringify({ status: "success", total_events: events.length, events: events }, null, 2));
+            const output = {
+                status: "success",
+                source: "Meetup",
+                total_events: events.length,
+                events: events
+            };
+            console.log(JSON.stringify(output, null, 2));
+
+            const fs = require('fs');
+            fs.writeFileSync('meetup_results.json', JSON.stringify(output, null, 2));
+            console.log("\nResults saved to meetup_results.json");
         } else {
             console.log("No HTML found in the response. Full job response:");
             console.log(JSON.stringify(job, null, 2));

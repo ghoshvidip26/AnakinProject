@@ -1,2 +1,9 @@
 .env
 /node_modules
+
+# Temporary Scraper Outputs
+*_results.json
+
+# Debug Artifacts
+debug_*.html
+debug_*.json
