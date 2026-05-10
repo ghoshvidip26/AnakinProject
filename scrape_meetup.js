@@ -124,7 +124,9 @@ const askQuestion = (query) => new Promise(resolve => rl.question(query, resolve
             const fs = require('fs');
             fs.writeFileSync("debug_meetup.html", html);
 
-            const events = parseMeetupEvents(html);
+            const { normalizeEvent } = require("./lib/normalizer.js");
+            const rawEvents = parseMeetupEvents(html);
+            const events = rawEvents.map(e => normalizeEvent(e, "Meetup"));
 
             console.log(`Found ${events.length} events:\n`);
             console.log(JSON.stringify({ status: "success", total_events: events.length, events: events }, null, 2));

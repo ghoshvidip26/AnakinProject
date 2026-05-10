@@ -93,7 +93,9 @@ async function scrape(url) {
 
     if (html) {
       console.log("Parsing HTML with Eventbrite Parser...");
-      const events = parseEventbriteEvents(html);
+      const { normalizeEvent } = require("./lib/normalizer.js");
+      const rawEvents = parseEventbriteEvents(html);
+      const events = rawEvents.map(e => normalizeEvent(e, "Eventbrite"));
       
       console.log(`Found ${events.length} events:\n`);
       const output = {

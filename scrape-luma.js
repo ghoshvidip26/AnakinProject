@@ -89,7 +89,9 @@ async function scrape(url) {
     
     if (job.html) {
       console.log("Parsing HTML with Cheerio...");
-      const events = parseLumaEvents(job.html);
+      const { normalizeEvent } = require("./lib/normalizer.js");
+      const rawEvents = parseLumaEvents(job.html);
+      const events = rawEvents.map(e => normalizeEvent(e, "Luma"));
       
       console.log(`Found ${events.length} events:\n`);
       console.log(JSON.stringify(events, null, 2));

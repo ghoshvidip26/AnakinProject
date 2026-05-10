@@ -4,6 +4,7 @@ const fetch = (...args) => import('node-fetch').then(({ default: fetch }) => fet
 const { parseLumaEvents } = require("./lib/parseLumaEvents");
 const { parseMeetupEvents } = require("./lib/parseMeetupEvents");
 const { parseEventbriteEvents } = require("./lib/parseEventbriteEvents");
+const { normalizeEvent } = require("./lib/normalizer");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -12,12 +13,32 @@ const API_KEY = process.env.ANAKIN_API_KEY;
 app.use(express.json());
 
 /**
+ * Filters events based on query parameters
+ */
+function filterEvents(events, { location, category }) {
+    let filtered = events;
+    if (location) {
+        const loc = location.toLowerCase();
+        filtered = filtered.filter(e => 
+            e.venue.toLowerCase().includes(loc) || 
+            e.title.toLowerCase().includes(loc)
+        );
+    }
+    if (category) {
+        const cat = category.toLowerCase();
+        filtered = filtered.filter(e => 
+            e.category.some(c => c.toLowerCase() === cat)
+        );
+    }
+    return filtered;
+}
+
+/**
  * Common Anakin.io Scraper Helper
  */
 async function runAnakinScrape(url, waitMs = 25000) {
     if (!API_KEY) throw new Error("ANAKIN_API_KEY is not set");
 
-    // Submit Job
     const submitResp = await fetch("https://api.anakin.io/v1/url-scraper", {
         method: "POST",
         headers: { "X-API-Key": API_KEY, "Content-Type": "application/json" },
@@ -29,7 +50,6 @@ async function runAnakinScrape(url, waitMs = 25000) {
 
     const jobId = submitData.jobId;
 
-    // Poll Job (Up to 5 minutes)
     for (let i = 0; i < 100; i++) {
         const pollResp = await fetch(`https://api.anakin.io/v1/url-scraper/${jobId}`, {
             headers: { "X-API-Key": API_KEY }
@@ -46,69 +66,70 @@ async function runAnakinScrape(url, waitMs = 25000) {
 
 // --- API ROUTES ---
 
-// 1. Luma Scrape
 app.get('/api/scrape/luma', async (req, res) => {
     try {
-        const url = "https://lu.ma/bengaluru";
-        const job = await runAnakinScrape(url);
-        const events = parseLumaEvents(job.html || job.content);
-        res.json({ status: "success", source: "Luma", total: events.length, events });
+        const job = await runAnakinScrape("https://lu.ma/bengaluru");
+        let events = parseLumaEvents(job.html).map(e => normalizeEvent(e, "Luma"));
+        events = filterEvents(events, req.query);
+        res.json({ status: "success", total: events.length, events });
     } catch (error) {
         res.status(500).json({ status: "error", message: error.message });
     }
 });
 
-// 2. Meetup Scrape
 app.get('/api/scrape/meetup', async (req, res) => {
     try {
-        const { location = "in--Bangalore", dateRange = "any-day" } = req.query;
-        const url = `https://www.meetup.com/find/?location=${location}&source=EVENTS&dateRange=${dateRange}`;
-        
+        const { loc = "in--Bangalore" } = req.query;
+        const url = `https://www.meetup.com/find/?location=${loc}&source=EVENTS`;
         const job = await runAnakinScrape(url);
-        const events = parseMeetupEvents(job.html || job.content);
-        res.json({ status: "success", source: "Meetup", total: events.length, events });
+        let events = parseMeetupEvents(job.html).map(e => normalizeEvent(e, "Meetup"));
+        events = filterEvents(events, req.query);
+        res.json({ status: "success", total: events.length, events });
     } catch (error) {
         res.status(500).json({ status: "error", message: error.message });
     }
 });
 
-// 3. Eventbrite Scrape
 app.get('/api/scrape/eventbrite', async (req, res) => {
     try {
-        const url = "https://www.eventbrite.com/d/india--bangalore/science-and-tech--events/?page=1";
+        const url = "https://www.eventbrite.com/d/india--bangalore/science-and-tech--events/";
         const job = await runAnakinScrape(url);
-        const events = parseEventbriteEvents(job.html || job.content);
-        res.json({ status: "success", source: "Eventbrite", total: events.length, events });
+        let events = parseEventbriteEvents(job.html).map(e => normalizeEvent(e, "Eventbrite"));
+        events = filterEvents(events, req.query);
+        res.json({ status: "success", total: events.length, events });
     } catch (error) {
         res.status(500).json({ status: "error", message: error.message });
     }
 });
 
-// 4. Scrape All
 app.get('/api/scrape/all', async (req, res) => {
     try {
-        const results = await Promise.allSettled([
-            runAnakinScrape("https://lu.ma/bengaluru").then(j => parseLumaEvents(j.html)),
-            runAnakinScrape("https://www.meetup.com/find/?location=in--Bangalore&source=EVENTS").then(j => parseMeetupEvents(j.html)),
-            runAnakinScrape("https://www.eventbrite.com/d/india--bangalore/science-and-tech--events/").then(j => parseEventbriteEvents(j.html))
+        const { location, category } = req.query;
+        const [lumaJob, meetupJob, ebJob] = await Promise.all([
+            runAnakinScrape("https://lu.ma/bengaluru"),
+            runAnakinScrape("https://www.meetup.com/find/?location=in--Bangalore&source=EVENTS"),
+            runAnakinScrape("https://www.eventbrite.com/d/india--bangalore/science-and-tech--events/")
         ]);
 
-        const formatted = {
-            luma: results[0].status === "fulfilled" ? results[0].value : { error: results[0].reason },
-            meetup: results[1].status === "fulfilled" ? results[1].value : { error: results[1].reason },
-            eventbrite: results[2].status === "fulfilled" ? results[2].value : { error: results[2].reason }
-        };
+        const lumaEvents = parseLumaEvents(lumaJob.html).map(e => normalizeEvent(e, "Luma"));
+        const meetupEvents = parseMeetupEvents(meetupJob.html).map(e => normalizeEvent(e, "Meetup"));
+        const ebEvents = parseEventbriteEvents(ebJob.html).map(e => normalizeEvent(e, "Eventbrite"));
 
-        res.json({ status: "success", data: formatted });
+        let allEvents = [...lumaEvents, ...meetupEvents, ...ebEvents];
+        allEvents = filterEvents(allEvents, { location, category });
+
+        res.json({
+            status: "success",
+            total: allEvents.length,
+            events: allEvents
+        });
     } catch (error) {
         res.status(500).json({ status: "error", message: error.message });
     }
 });
 
 app.listen(PORT, () => {
-    console.log(`\n🚀 Anakin API Server running at http://localhost:${PORT}`);
-    console.log(`- GET /api/scrape/luma`);
-    console.log(`- GET /api/scrape/meetup?location=in--Bangalore`);
-    console.log(`- GET /api/scrape/eventbrite`);
-    console.log(`- GET /api/scrape/all`);
+    console.log(`\n🚀 Unified Anakin API Server running at http://localhost:${PORT}`);
+    console.log(`- Filter by location: ?location=HSR`);
+    console.log(`- Filter by category: ?category=AI`);
 });
