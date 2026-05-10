@@ -2,39 +2,51 @@ require('dotenv').config();
 const fetch = (...args) => import('node-fetch').then(({ default: fetch }) => fetch(...args));
 
 const ANAKIN_API_KEY = process.env.ANAKIN_API_KEY;
-const MEETUP_URL = 'https://www.meetup.com/find/?location=in--Bangalore&source=EVENTS';
+// --- INTERACTIVE FILTERING SETUP ---
+const readline = require('readline');
 
 if (!ANAKIN_API_KEY) {
     console.error('Error: ANAKIN_API_KEY is not set in .env file');
     process.exit(1);
 }
 
-async function scrapeMeetup() {
-    console.log(`Starting scrape for: ${MEETUP_URL}`);
+const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout
+});
+
+const askQuestion = (query) => new Promise(resolve => rl.question(query, resolve));
+
+async function main() {
+    console.log('\n=== Meetup Scraper Interactive Setup ===');
+    console.log('Leave any option blank and press Enter to use the default value.\n');
+
+    const location = await askQuestion('1. Enter Location (e.g. in--Bangalore, us--ny--new-york) [default: in--Bangalore]: ') || 'in--Bangalore';
+    const eventType = await askQuestion('2. Enter Event Type (inPerson, online) [default: both]: ');
+    const dateRange = await askQuestion('3. Enter Date Range (today, tomorrow, this-week, this-weekend, next-week) [default: any-day]: ') || 'any-day';
+    
+    rl.close();
+
+    // Construct the URL dynamically based on filters
+    const queryParams = new URLSearchParams({
+        location: location,
+        source: 'EVENTS',
+    });
+    if (eventType) queryParams.append('eventType', eventType);
+    if (dateRange && dateRange !== 'any-day') queryParams.append('dateRange', dateRange);
+
+    const meetupUrl = `https://www.meetup.com/find/?${queryParams.toString()}`;
+    await scrapeMeetup(meetupUrl);
+}
+
+async function scrapeMeetup(meetupUrl) {
+    console.log(`\nStarting scrape for: ${meetupUrl}`);
 
     const payload = {
-        url: MEETUP_URL,
+        url: meetupUrl,
         useBrowser: true,
-        waitMs: 20000,
-        generateJson: true,
-        prompt: "This is a Meetup events page. It contains a grid of events. Please wait for the events to load, scroll if necessary, and then extract every single event you can find. For each event, I need the Title, Date, Group Name, and the Link to the event page. Return this in a JSON object with an 'events' array.",
-        schema: {
-            type: "object",
-            properties: {
-                events: {
-                    type: "array",
-                    items: {
-                        type: "object",
-                        properties: {
-                            title: { type: "string" },
-                            date: { type: "string" },
-                            group: { type: "string" },
-                            url: { type: "string" }
-                        }
-                    }
-                }
-            }
-        }
+        waitMs: 15000,
+        generateJson: true
     };
 
     try {
@@ -63,9 +75,36 @@ async function scrapeMeetup() {
 
             if (jobResult.status === 'completed') {
                 console.log('Done!');
-                const extracted = jobResult.result?.extractedData;
-                console.log(JSON.stringify(extracted, null, 2));
-                return extracted;
+                
+                // Write debug file
+                const fs = require('fs');
+                fs.writeFileSync('debug_response.json', JSON.stringify(jobResult, null, 2));
+                console.log("Saved raw response to debug_response.json for deep analysis.");
+
+                const extracted = jobResult.generatedJson || jobResult;
+                let events = [];
+                if (extracted && extracted.data && extracted.data.links) {
+                    events = extracted.data.links.map(link => {
+                        const lines = link.text.split('\n').map(l => l.trim()).filter(l => l !== '');
+                        return {
+                            title: lines[0],
+                            date: "Extracting...",
+                            group: "Extracting...",
+                            attendees: "Extracting...",
+                            url: link.url
+                        };
+                    });
+                }
+
+                const finalOutput = {
+                    status: "success",
+                    source: "Waiting for debug",
+                    total_events: events.length,
+                    events: events
+                };
+
+                console.log(JSON.stringify(finalOutput, null, 2));
+                return finalOutput;
             }
             await new Promise(r => setTimeout(r, 3000));
         }
@@ -77,4 +116,4 @@ async function scrapeMeetup() {
     }
 }
 
-scrapeMeetup();
+main();
