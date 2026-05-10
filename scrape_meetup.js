@@ -47,8 +47,8 @@ async function scrape(url) {
     const submitted = await request("POST", "/url-scraper", {
         url,
         useBrowser: true,
-        waitMs: 15000,
-        generateJson: false // We will parse the HTML ourselves using Cheerio / Regex in lib/parseMeetupEvents.js
+        waitMs: 25000, // Increased from 15s to 25s for heavy React rendering
+        generateJson: false 
     });
 
     if (!submitted || !submitted.jobId) {
@@ -56,9 +56,9 @@ async function scrape(url) {
     }
 
     const jobId = submitted.jobId;
-    console.log(`Job submitted! ID: ${jobId}. Polling...`);
+    console.log(`Job submitted! ID: ${jobId}. Polling (up to 5 mins)...`);
 
-    for (let i = 0; i < 60; i++) {
+    for (let i = 0; i < 100; i++) { // Increased from 60 to 100 attempts
         const job = await request("GET", `/url-scraper/${jobId}`);
 
         if (!job) {
