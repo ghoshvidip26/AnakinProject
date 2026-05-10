@@ -4,6 +4,7 @@ const fetch = (...args) => import('node-fetch').then(({ default: fetch }) => fet
 const { parseLumaEvents } = require("./lib/parseLumaEvents");
 const { parseMeetupEvents } = require("./lib/parseMeetupEvents");
 const { parseEventbriteEvents } = require("./lib/parseEventbriteEvents");
+const { normalizeEvent } = require("./lib/normalizer");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -12,24 +13,43 @@ const API_KEY = process.env.ANAKIN_API_KEY;
 app.use(express.json());
 
 /**
+ * Filters events based on query parameters
+ */
+function filterEvents(events, { location, category }) {
+    let filtered = events;
+    if (location) {
+        const loc = location.toLowerCase();
+        filtered = filtered.filter(e =>
+            e.venue.toLowerCase().includes(loc) ||
+            e.title.toLowerCase().includes(loc)
+        );
+    }
+    if (category) {
+        const cat = category.toLowerCase();
+        filtered = filtered.filter(e =>
+            e.category.some(c => c.toLowerCase() === cat)
+        );
+    }
+    return filtered;
+}
+
+/**
  * Common Anakin.io Scraper Helper
  */
 async function runAnakinScrape(url, waitMs = 25000) {
     if (!API_KEY) throw new Error("ANAKIN_API_KEY is not set");
 
-    // Submit Job
     const submitResp = await fetch("https://api.anakin.io/v1/url-scraper", {
         method: "POST",
         headers: { "X-API-Key": API_KEY, "Content-Type": "application/json" },
         body: JSON.stringify({ url, useBrowser: true, waitMs, generateJson: false })
     });
-    
+
     const submitData = await submitResp.json();
     if (!submitResp.ok) throw new Error(submitData.message || "Failed to submit job");
 
     const jobId = submitData.jobId;
 
-    // Poll Job (Up to 5 minutes)
     for (let i = 0; i < 100; i++) {
         const pollResp = await fetch(`https://api.anakin.io/v1/url-scraper/${jobId}`, {
             headers: { "X-API-Key": API_KEY }
@@ -56,7 +76,7 @@ function mapLocation(city) {
     if (c === "hyderabad") return { luma: "hyderabad", meetup: "in--hyderabad", eventbrite: "india--hyderabad" };
     if (c === "pune") return { luma: "pune", meetup: "in--pune", eventbrite: "india--pune" };
     if (c === "chennai") return { luma: "chennai", meetup: "in--chennai", eventbrite: "india--chennai" };
-    
+
     // Generic fallback
     return { luma: c.replace(/\s+/g, '-'), meetup: `in--${c.replace(/\s+/g, '-')}`, eventbrite: `india--${c.replace(/\s+/g, '-')}` };
 }
@@ -75,7 +95,8 @@ const lumaHandler = async (req, res) => {
         }
         
         const job = await runAnakinScrape(url);
-        const events = parseLumaEvents(job.html || job.content);
+        let events = parseLumaEvents(job.html || job.content).map(e => normalizeEvent(e, "Luma"));
+        events = filterEvents(events, req.body || req.query);
         res.json({ status: "success", source: "Luma", total: events.length, events });
     } catch (error) {
         res.status(500).json({ status: "error", message: error.message });
@@ -92,7 +113,8 @@ const meetupHandler = async (req, res) => {
         const url = `https://www.meetup.com/find/?location=${location}&source=EVENTS&dateRange=${dateRange}`;
         
         const job = await runAnakinScrape(url);
-        const events = parseMeetupEvents(job.html || job.content);
+        let events = parseMeetupEvents(job.html || job.content).map(e => normalizeEvent(e, "Meetup"));
+        events = filterEvents(events, req.body || req.query);
         res.json({ status: "success", source: "Meetup", total: events.length, events });
     } catch (error) {
         res.status(500).json({ status: "error", message: error.message });
@@ -113,7 +135,8 @@ const eventbriteHandler = async (req, res) => {
         }
 
         const job = await runAnakinScrape(url);
-        const events = parseEventbriteEvents(job.html || job.content);
+        let events = parseEventbriteEvents(job.html || job.content).map(e => normalizeEvent(e, "Eventbrite"));
+        events = filterEvents(events, req.body || req.query);
         res.json({ status: "success", source: "Eventbrite", total: events.length, events });
     } catch (error) {
         res.status(500).json({ status: "error", message: error.message });
@@ -134,18 +157,23 @@ const scrapeAllHandler = async (req, res) => {
         const eventbriteUrl = req.body?.eventbriteUrl || req.query?.eventbriteUrl || `https://www.eventbrite.com/d/${eventbriteLoc}/${category}/`;
 
         const results = await Promise.allSettled([
-            runAnakinScrape(lumaUrl).then(j => parseLumaEvents(j.html)),
-            runAnakinScrape(`https://www.meetup.com/find/?location=${meetupLoc}&source=EVENTS`).then(j => parseMeetupEvents(j.html)),
-            runAnakinScrape(eventbriteUrl).then(j => parseEventbriteEvents(j.html))
+            runAnakinScrape(lumaUrl).then(j => parseLumaEvents(j.html).map(e => normalizeEvent(e, "Luma"))),
+            runAnakinScrape(`https://www.meetup.com/find/?location=${meetupLoc}&source=EVENTS`).then(j => parseMeetupEvents(j.html).map(e => normalizeEvent(e, "Meetup"))),
+            runAnakinScrape(eventbriteUrl).then(j => parseEventbriteEvents(j.html).map(e => normalizeEvent(e, "Eventbrite")))
         ]);
 
-        const formatted = {
-            luma: results[0].status === "fulfilled" ? results[0].value : { error: results[0].reason },
-            meetup: results[1].status === "fulfilled" ? results[1].value : { error: results[1].reason },
-            eventbrite: results[2].status === "fulfilled" ? results[2].value : { error: results[2].reason }
-        };
+        let allEvents = [];
+        if (results[0].status === "fulfilled") allEvents.push(...results[0].value);
+        if (results[1].status === "fulfilled") allEvents.push(...results[1].value);
+        if (results[2].status === "fulfilled") allEvents.push(...results[2].value);
 
-        res.json({ status: "success", data: formatted });
+        allEvents = filterEvents(allEvents, req.body || req.query);
+
+        res.json({
+            status: "success",
+            total: allEvents.length,
+            events: allEvents
+        });
     } catch (error) {
         res.status(500).json({ status: "error", message: error.message });
     }

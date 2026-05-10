@@ -48,7 +48,7 @@ async function scrape(url) {
         url,
         useBrowser: true,
         waitMs: 25000, // Increased from 15s to 25s for heavy React rendering
-        generateJson: false 
+        generateJson: false
     });
 
     if (!submitted || !submitted.jobId) {
@@ -120,7 +120,9 @@ const askQuestion = (query) => new Promise(resolve => rl.question(query, resolve
         if (html) {
             console.log("Parsing HTML with Meetup Parser...");
 
-            const events = parseMeetupEvents(html);
+            const { normalizeEvent } = require("./lib/normalizer.js");
+            const rawEvents = parseMeetupEvents(html);
+            const events = rawEvents.map(e => normalizeEvent(e, "Meetup"));
 
             console.log(`Found ${events.length} events:\n`);
             const output = {
