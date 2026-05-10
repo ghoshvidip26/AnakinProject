@@ -1,14 +1,87 @@
 require('dotenv').config();
+const { parseMeetupEvents } = require("./lib/parseMeetupEvents.js");
+const readline = require('readline');
 const fetch = (...args) => import('node-fetch').then(({ default: fetch }) => fetch(...args));
 
-const ANAKIN_API_KEY = process.env.ANAKIN_API_KEY;
-// --- INTERACTIVE FILTERING SETUP ---
-const readline = require('readline');
+const BASE = "https://api.anakin.io/v1";
+const API_KEY = process.env.ANAKIN_API_KEY;
 
-if (!ANAKIN_API_KEY) {
-    console.error('Error: ANAKIN_API_KEY is not set in .env file');
-    process.exit(1);
+if (!API_KEY) {
+  console.error("Error: ANAKIN_API_KEY is not set in your .env file");
+  process.exit(1);
 }
+
+/**
+ * Helper to make API requests to Anakin.io
+ */
+async function request(method, path, body) {
+  try {
+    const resp = await fetch(BASE + path, {
+      method,
+      headers: { 
+        "X-API-Key": API_KEY, 
+        "Content-Type": "application/json" 
+      },
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    
+    if (!resp.ok) {
+      const errData = await resp.json().catch(() => ({}));
+      console.error(`API Error (${resp.status}):`, errData);
+      return null;
+    }
+    
+    return await resp.json();
+  } catch (error) {
+    console.error(`Request failed: ${error.message}`);
+    return null;
+  }
+}
+
+/**
+ * Scrapes Meetup events from a given URL using Anakin.io's URL Scraper
+ */
+async function scrape(url) {
+  console.log(`\nSubmitting scrape job for: ${url}...`);
+  
+  const submitted = await request("POST", "/url-scraper", { 
+    url,
+    useBrowser: true,
+    waitMs: 15000, 
+    generateJson: false // We will parse the HTML ourselves using Cheerio / Regex in lib/parseMeetupEvents.js
+  });
+
+  if (!submitted || !submitted.jobId) {
+    throw new Error("Failed to submit scrape job.");
+  }
+
+  const jobId = submitted.jobId;
+  console.log(`Job submitted! ID: ${jobId}. Polling...`);
+
+  for (let i = 0; i < 60; i++) {
+    const job = await request("GET", `/url-scraper/${jobId}`);
+    
+    if (!job) {
+      await new Promise(r => setTimeout(r, 3000));
+      continue;
+    }
+
+    if (job.status === "completed") {
+      return job;
+    }
+
+    if (job.status === "failed") {
+      throw new Error(`Scrape failed: ${job.error}`);
+    }
+
+    process.stdout.write("."); 
+    await new Promise(r => setTimeout(r, 3000));
+  }
+  
+  throw new Error("Timed out after 3 minutes");
+}
+
+// --- INTERACTIVE SETUP & EXECUTION ---
 
 const rl = readline.createInterface({
     input: process.stdin,
@@ -17,7 +90,8 @@ const rl = readline.createInterface({
 
 const askQuestion = (query) => new Promise(resolve => rl.question(query, resolve));
 
-async function main() {
+(async () => {
+  try {
     console.log('\n=== Meetup Scraper Interactive Setup ===');
     console.log('Leave any option blank and press Enter to use the default value.\n');
 
@@ -36,84 +110,26 @@ async function main() {
     if (dateRange && dateRange !== 'any-day') queryParams.append('dateRange', dateRange);
 
     const meetupUrl = `https://www.meetup.com/find/?${queryParams.toString()}`;
-    await scrapeMeetup(meetupUrl);
-}
+    
+    const job = await scrape(meetupUrl);
+    
+    console.log("\n\n--- Scrape Completed ---");
+    
+    const html = job.html || job.content || job.result;
 
-async function scrapeMeetup(meetupUrl) {
-    console.log(`\nStarting scrape for: ${meetupUrl}`);
-
-    const payload = {
-        url: meetupUrl,
-        useBrowser: true,
-        waitMs: 15000,
-        generateJson: true
-    };
-
-    try {
-        const response = await fetch('https://api.anakin.io/v1/url-scraper', {
-            method: 'POST',
-            headers: {
-                'X-API-Key': ANAKIN_API_KEY,
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify(payload)
-        });
-
-        const data = await response.json();
-        if (!response.ok) throw new Error(`Anakin API Error: ${JSON.stringify(data)}`);
-
-        const jobId = data.jobId;
-        console.log(`Job submitted. ID: ${jobId}`);
-
-        let attempts = 0;
-        while (attempts < 60) {
-            attempts++;
-            const res = await fetch(`https://api.anakin.io/v1/url-scraper/${jobId}`, {
-                headers: { 'X-API-Key': ANAKIN_API_KEY }
-            });
-            const jobResult = await res.json();
-
-            if (jobResult.status === 'completed') {
-                console.log('Done!');
-                
-                // Write debug file
-                const fs = require('fs');
-                fs.writeFileSync('debug_response.json', JSON.stringify(jobResult, null, 2));
-                console.log("Saved raw response to debug_response.json for deep analysis.");
-
-                const extracted = jobResult.generatedJson || jobResult;
-                let events = [];
-                if (extracted && extracted.data && extracted.data.links) {
-                    events = extracted.data.links.map(link => {
-                        const lines = link.text.split('\n').map(l => l.trim()).filter(l => l !== '');
-                        return {
-                            title: lines[0],
-                            date: "Extracting...",
-                            group: "Extracting...",
-                            attendees: "Extracting...",
-                            url: link.url
-                        };
-                    });
-                }
-
-                const finalOutput = {
-                    status: "success",
-                    source: "Waiting for debug",
-                    total_events: events.length,
-                    events: events
-                };
-
-                console.log(JSON.stringify(finalOutput, null, 2));
-                return finalOutput;
-            }
-            await new Promise(r => setTimeout(r, 3000));
-        }
-
-        throw new Error('Timeout: Job took too long to complete.');
-
-    } catch (error) {
-        console.error('Error during scraping:', error.message);
+    if (html) {
+      console.log("Parsing HTML with Meetup Parser...");
+      const events = parseMeetupEvents(html);
+      
+      console.log(`Found ${events.length} events:\n`);
+      console.log(JSON.stringify({ status: "success", total_events: events.length, events: events }, null, 2));
+    } else {
+      console.log("No HTML found in the response. Full job response:");
+      console.log(JSON.stringify(job, null, 2));
     }
-}
-
-main();
+    
+  } catch (err) {
+    console.error("\nError:", err.message);
+    rl.close();
+  }
+})();
